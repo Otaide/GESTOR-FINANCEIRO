@@ -48,15 +48,16 @@ class DatabaseManager:
         return self.cursor.fetchall()
 
     def adicionar_movimentacao(self, **kwargs):
+        # Validar formato da data antes de inserir
+        try:
+            datetime.strptime(kwargs['data'], "%d/%m/%Y")
+        except ValueError:
+            raise ValueError("Formato de data inválido. Use DD/MM/AAAA")
         query = '''INSERT INTO movimentacoes (data, tipo, conta, valor, observacoes)
                    VALUES (:data, :tipo, :conta, :valor, :observacoes)'''
         self.execute_query(query, kwargs)
 
     def editar_movimentacao(self, id, **kwargs):
-        query = '''UPDATE movimentacoes
-                   SET data=:data, tipo=:tipo, conta=:conta, valor=:valor, observacoes=:observacoes
-                   WHERE id=:id'''
-        self.execute_query(query, {**kwargs, "id": id})
         query = '''UPDATE movimentacoes
                    SET data=:data, tipo=:tipo, conta=:conta, valor=:valor, observacoes=:observacoes
                    WHERE id=:id'''
@@ -115,9 +116,36 @@ class UIManager:
     def _setup_styles(self):
         style = ttk.Style()
         style.theme_use("clam")
-        style.configure("TLabel", font=("Arial", 12))
-        style.configure("TButton", font=("Arial", 12), padding=5)
-        style.configure("TEntry", font=("Arial", 12))
+
+        # Paleta de cores empresariais
+        primary_color = "#2c3e50"  # Azul escuro
+        secondary_color = "#ecf0f1"  # Cinza claro
+        accent_color = "#3498db"  # Azul
+        text_color = "#ffffff"  # Branco
+        background_color = "#34495e"  # Cinza escuro
+        hover_color = "#2980b9"  # Azul mais claro para hover
+        border_color = "#bdc3c7"  # Cinza para bordas
+        shadow_color = "#95a5a6"  # Cinza para sombras
+
+        # Configuração de estilos
+        style.configure("TLabel", font=("Arial", 12), background=background_color, foreground=text_color)
+        style.configure("Resumo.TLabel", font=("Arial", 12), background="#1abc9c", foreground=text_color)  # Verde
+        style.configure("Movimentacao.TLabel", font=("Arial", 12), background="#bdc3c7", foreground=primary_color)  # Cinza
+        style.configure("TButton", font=("Arial", 12), padding=5, background=primary_color, foreground=text_color, bordercolor=border_color)
+        style.configure("TEntry", font=("Arial", 12), background=secondary_color, foreground=primary_color, bordercolor=border_color)
+        style.configure("TCombobox", font=("Arial", 12), background=secondary_color, foreground=primary_color, bordercolor=border_color)
+        style.configure("Treeview", font=("Arial", 12), background=secondary_color, foreground=primary_color, fieldbackground=secondary_color, bordercolor=border_color)
+        style.configure("Treeview.Heading", font=("Arial", 12, "bold"), background=primary_color, foreground=text_color, bordercolor=border_color)
+        style.configure("TNotebook", background=background_color, bordercolor=border_color)
+        style.configure("TNotebook.Tab", font=("Arial", 12), bordercolor=border_color)
+        style.map("TNotebook.Tab", background=[("selected", "#1abc9c"), ("!selected", primary_color)], foreground=[("selected", text_color), ("!selected", text_color)])
+        style.configure("Resumo.TFrame", background="#1abc9c")  # Verde
+        style.configure("Movimentacao.TFrame", background="#bdc3c7")  # Cinza
+        style.map("TButton", background=[("active", hover_color)], bordercolor=[("active", border_color)], shadow=[("active", shadow_color)])
+        style.map("Treeview.Heading", background=[("!active", primary_color)], foreground=[("!active", text_color)])
+
+        # Aplicar cores de fundo ao root
+        self.root.configure(background=background_color)
 
     def _build_ui(self):
         self.notebook = ttk.Notebook(self.root)
@@ -132,11 +160,13 @@ class UIManager:
         self._build_resumo_ui()
         self._build_movimentacao_ui()
 
+        self.root.bind("<Escape>", self._limpar_filtros_movimentacao)
+
     def _build_resumo_ui(self):
-        frame_top = ttk.Frame(self.frame_resumo)
+        frame_top = ttk.Frame(self.frame_resumo, style="Resumo.TFrame")
         frame_top.pack(fill="x", padx=10, pady=10)
 
-        self.label_saldo_total = ttk.Label(frame_top, text="Saldo Total: R$ 0.00", font=("Arial", 16))
+        self.label_saldo_total = ttk.Label(frame_top, text="Saldo Total: R$ 0.00", font=("Arial", 16), style="Resumo.TLabel")
         self.label_saldo_total.pack(side="left", padx=10)
 
         self.tree_resumo = ttk.Treeview(self.frame_resumo, columns=("Conta", "Valor"), show="headings")
@@ -150,7 +180,7 @@ class UIManager:
     def _abrir_filtros(self):
         self.filtros_toplevel = tk.Toplevel(self.root)
         self.filtros_toplevel.title("Filtros")
-        self.filtros_toplevel.geometry("300x200")
+        self.filtros_toplevel.geometry("400x200")
         self.filtros_toplevel.transient(self.root)
         self.filtros_toplevel.grab_set()
 
@@ -162,7 +192,7 @@ class UIManager:
         self.entry_data_fim.grid(row=0, column=2, padx=10, pady=10)
 
         ttk.Label(self.filtros_toplevel, text="Tipo:").grid(row=1, column=0, padx=10, pady=10)
-        self.tipo_filtro_var = tk.StringVar()
+        self.tipo_filtro_var = tk.StringVar(value="Todos")
         ttk.Radiobutton(self.filtros_toplevel, text="Todos", variable=self.tipo_filtro_var, value="Todos").grid(row=1, column=1, padx=10, pady=10)
         ttk.Radiobutton(self.filtros_toplevel, text="Entrada", variable=self.tipo_filtro_var, value="Entrada").grid(row=1, column=2, padx=10, pady=10)
         ttk.Radiobutton(self.filtros_toplevel, text="Saída", variable=self.tipo_filtro_var, value="Saída").grid(row=1, column=3, padx=10, pady=10)
@@ -170,8 +200,15 @@ class UIManager:
         ttk.Label(self.filtros_toplevel, text="Conta:").grid(row=2, column=0, padx=10, pady=10)
         self.combo_conta_filtro = ttk.Combobox(self.filtros_toplevel)
         self.combo_conta_filtro.grid(row=2, column=1, padx=10, pady=10)
+        self._atualizar_lista_contas_filtro()
 
         ttk.Button(self.filtros_toplevel, text="Aplicar Filtros", command=self._aplicar_filtros).grid(row=3, column=0, columnspan=4, pady=10)
+
+        self.filtros_toplevel.bind("<Escape>", self._limpar_filtros)
+
+    def _atualizar_lista_contas_filtro(self):
+        contas = self.db_manager.buscar_contas()
+        self.combo_conta_filtro["values"] = [conta[0] for conta in contas]
 
     def _aplicar_filtros(self):
         data_inicio = self.entry_data_inicio.get()
@@ -191,6 +228,14 @@ class UIManager:
         self._atualizar_movimentacoes(filtros)
         self.filtros_toplevel.destroy()
 
+    def _limpar_filtros(self, event=None):
+        self.entry_data_inicio.set_date(datetime.now())
+        self.entry_data_fim.set_date(datetime.now())
+        self.tipo_filtro_var.set("Todos")
+        self.combo_conta_filtro.set("")
+        self._atualizar_movimentacoes()
+        self.filtros_toplevel.destroy()
+
     def _atualizar_resumo(self):
         movimentacoes = self.db_manager.buscar_movimentacoes()
         resumo = {}
@@ -208,13 +253,15 @@ class UIManager:
         self.label_saldo_total.config(text=f"Saldo Total: R$ {saldo:.2f}")
 
     def _build_movimentacao_ui(self):
-        frame_buttons = ttk.Frame(self.frame_movimentacao)
+        frame_buttons = ttk.Frame(self.frame_movimentacao, style="Movimentacao.TFrame")
         frame_buttons.pack(fill="x", padx=10, pady=10)
 
         ttk.Button(frame_buttons, text="Novo Registro", command=self._abrir_tela_registro).pack(side="left", padx=10)
         ttk.Button(frame_buttons, text="Exportar CSV", command=self._exportar_csv).pack(side="right", padx=10)
         ttk.Button(frame_buttons, text="Filtros", command=self._abrir_filtros).pack(side="right", padx=10)
         ttk.Button(frame_buttons, text="Adicionar Contas", command=self._abrir_tela_contas).pack(side="right", padx=10)
+        ttk.Button(frame_buttons, text="Editar Registro", command=self._abrir_tela_editar_registro).pack(side="left", padx=10)
+        ttk.Button(frame_buttons, text="Excluir Registro", command=self._excluir_movimentacao).pack(side="left", padx=10)
 
         self.tree_movimentacoes = ttk.Treeview(self.frame_movimentacao, columns=("ID", "Data", "Tipo", "Conta", "Valor", "Observações"), show="headings")
         for col in self.tree_movimentacoes["columns"]:
@@ -223,7 +270,11 @@ class UIManager:
         self.tree_movimentacoes.pack(fill="both", expand=True, padx=10, pady=10)
 
         self.tree_movimentacoes.bind("<Double-1>", self._on_tree_select)
+        self.frame_movimentacao.bind("<Escape>", self._limpar_filtros_movimentacao)
 
+        self._atualizar_movimentacoes()
+
+    def _limpar_filtros_movimentacao(self, event=None):
         self._atualizar_movimentacoes()
 
     def _abrir_tela_registro(self):
@@ -244,7 +295,7 @@ class UIManager:
         ttk.Label(self.toplevel, text="Conta:").grid(row=2, column=0, padx=10, pady=10)
         self.combo_conta = ttk.Combobox(self.toplevel)
         self.combo_conta.grid(row=2, column=1, padx=10, pady=10)
-        self._atualizar_lista_contas()
+        self._atualizar_lista_contas_registro()
 
         ttk.Label(self.toplevel, text="Valor (R$):").grid(row=3, column=0, padx=10, pady=10)
         self.entry_valor = ttk.Entry(self.toplevel)
@@ -259,6 +310,10 @@ class UIManager:
 
         ttk.Button(frame_buttons, text="Salvar", command=self._salvar_registro).pack(side="left", padx=10)
         ttk.Button(frame_buttons, text="Cancelar", command=self.toplevel.destroy).pack(side="right", padx=10)
+
+    def _atualizar_lista_contas_registro(self):
+        contas = self.db_manager.buscar_contas()
+        self.combo_conta["values"] = [conta[0] for conta in contas]
 
     def _abrir_tela_contas(self):
         self.contas_toplevel = tk.Toplevel(self.root)
@@ -328,6 +383,70 @@ class UIManager:
         except Exception as e:
             messagebox.showerror("Erro Inesperado", f"Ocorreu um erro: {e}")
 
+    def _abrir_tela_editar_registro(self):
+        selected_item = self.tree_movimentacoes.selection()
+        if not selected_item:
+            messagebox.showerror("Erro", "Nenhuma movimentação selecionada.")
+            return
+
+        item = self.tree_movimentacoes.item(selected_item)
+        mov = item["values"]
+
+        self.toplevel = tk.Toplevel(self.root)
+        self.toplevel.title("Editar Registro")
+        self.toplevel.geometry("400x300")
+        self.toplevel.transient(self.root)
+        self.toplevel.grab_set()
+
+        ttk.Label(self.toplevel, text="Data:").grid(row=0, column=0, padx=10, pady=10)
+        self.entry_data = DateEntry(self.toplevel, date_pattern='dd/mm/yyyy')
+        self.entry_data.grid(row=0, column=1, padx=10, pady=10)
+        self.entry_data.set_date(datetime.strptime(mov[1], "%d/%m/%Y"))
+
+        self.tipo_var = tk.StringVar(value=mov[2])
+        ttk.Radiobutton(self.toplevel, text="Entrada", variable=self.tipo_var, value="Entrada").grid(row=1, column=0, padx=10, pady=10)
+        ttk.Radiobutton(self.toplevel, text="Saída", variable=self.tipo_var, value="Saída").grid(row=1, column=1, padx=10, pady=10)
+
+        ttk.Label(self.toplevel, text="Conta:").grid(row=2, column=0, padx=10, pady=10)
+        self.combo_conta = ttk.Combobox(self.toplevel)
+        self.combo_conta.grid(row=2, column=1, padx=10, pady=10)
+        self._atualizar_lista_contas_registro()
+        self.combo_conta.set(mov[3])
+
+        ttk.Label(self.toplevel, text="Valor (R$):").grid(row=3, column=0, padx=10, pady=10)
+        self.entry_valor = ttk.Entry(self.toplevel)
+        self.entry_valor.grid(row=3, column=1, padx=10, pady=10)
+        self.entry_valor.insert(0, mov[4])
+
+        ttk.Label(self.toplevel, text="Observações:").grid(row=4, column=0, padx=10, pady=10)
+        self.entry_observacoes = ttk.Entry(self.toplevel)
+        self.entry_observacoes.grid(row=4, column=1, padx=10, pady=10)
+        self.entry_observacoes.insert(0, mov[5])
+
+        frame_buttons = ttk.Frame(self.toplevel)
+        frame_buttons.grid(row=5, column=0, columnspan=2, pady=10)
+
+        ttk.Button(frame_buttons, text="Salvar", command=lambda: self._salvar_edicao(mov[0])).pack(side="left", padx=10)
+        ttk.Button(frame_buttons, text="Cancelar", command=self.toplevel.destroy).pack(side="right", padx=10)
+
+    def _salvar_edicao(self, mov_id):
+        try:
+            data = self.entry_data.get()
+            datetime.strptime(data, "%d/%m/%Y")
+            tipo = self.tipo_var.get()
+            conta = self.combo_conta.get()
+            valor = float(self.entry_valor.get())
+            observacoes = self.entry_observacoes.get()
+            self._validar_campos(data=data, tipo=tipo, conta=conta, valor=valor)
+            self.db_manager.editar_movimentacao(mov_id, data=data, tipo=tipo, conta=conta, valor=valor, observacoes=observacoes)
+            self._atualizar_resumo()
+            self._atualizar_movimentacoes()
+            self.toplevel.destroy()
+        except ValueError as e:
+            messagebox.showerror("Erro de Valor", f"Entrada inválida: {e}")
+        except Exception as e:
+            messagebox.showerror("Erro Inesperado", f"Ocorreu um erro: {e}")
+
     def _editar_movimentacao(self):
         try:
             selected_item = self.tree_movimentacoes.selection()
@@ -338,16 +457,24 @@ class UIManager:
             item = self.tree_movimentacoes.item(selected_item)
             mov_id = item["values"][0]
 
-            data = self.widgets["entry_data"].get()
-            datetime.strptime(data, "%d/%m/%Y")
-            kwargs = {key: widget.get() for key, widget in self.widgets.items() if key != "entry_data"}
-            kwargs["data"] = data
-            kwargs["valor"] = float(kwargs["entry_valor"]) if kwargs["entry_valor"].replace('.', '', 1).isdigit() else 0.0
-            self._validar_campos(**kwargs)
-            self.db_manager.editar_movimentacao(mov_id, **kwargs)
+            # Coletar dados diretamente dos widgets existentes
+            data = self.entry_data.get()
+            tipo = self.tipo_var.get()
+            conta = self.combo_conta.get()
+            valor = float(self.entry_valor.get())
+            observacoes = self.entry_observacoes.get()
+
+            # Validar campos
+            self._validar_campos(data=data, tipo=tipo, conta=conta, valor=valor)
+            
+            # Atualizar movimentação
+            self.db_manager.editar_movimentacao(mov_id, 
+                data=data, tipo=tipo, conta=conta, 
+                valor=valor, observacoes=observacoes)
+            
             self._atualizar_resumo()
             self._atualizar_movimentacoes()
-            self._limpar_campos()
+            self.toplevel.destroy()
         except ValueError as e:
             messagebox.showerror("Erro de Valor", f"Entrada inválida: {e}")
         except Exception as e:
@@ -363,10 +490,11 @@ class UIManager:
             item = self.tree_movimentacoes.item(selected_item)
             mov_id = item["values"][0]
 
-            self.db_manager.excluir_movimentacao(mov_id)
-            self._atualizar_resumo()
-            self._atualizar_movimentacoes()
-            self._limpar_campos()
+            confirm = messagebox.askyesno("Confirmação", "Tem certeza que deseja excluir esta movimentação?")
+            if confirm:
+                self.db_manager.excluir_movimentacao(mov_id)
+                self._atualizar_resumo()
+                self._atualizar_movimentacoes()
         except Exception as e:
             messagebox.showerror("Erro Inesperado", f"Ocorreu um erro: {e}")
 
@@ -388,7 +516,25 @@ class UIManager:
         self.entry_observacoes.insert(0, mov[5])
 
     def _atualizar_movimentacoes(self, filtros=None):
-        movimentacoes = self.db_manager.buscar_movimentacoes(filtros)
+        query = 'SELECT * FROM movimentacoes'
+        params = []
+
+        if filtros:
+            conditions = []
+            if "data_inicio" in filtros and "data_fim" in filtros:
+                conditions.append("data BETWEEN ? AND ?")
+                params.extend([filtros["data_inicio"], filtros["data_fim"]])
+            if "tipo" in filtros:
+                conditions.append("tipo = ?")
+                params.append(filtros["tipo"])
+            if "conta" in filtros:
+                conditions.append("conta = ?")
+                params.append(filtros["conta"])
+
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+
+        movimentacoes = self.db_manager.fetch_all(query, params)
         self._preencher_treeview(self.tree_movimentacoes, movimentacoes, [0, 1, 2, 3, 4, 5])
 
     def _preencher_treeview(self, treeview, data, columns):
@@ -400,6 +546,13 @@ class UIManager:
     def _limpar_campos(self):
         for widget in self.widgets.values():
             widget.delete(0, tk.END)
+
+    def _limpar_campos_registro(self):
+        self.entry_data.delete(0, tk.END)
+        self.tipo_var.set('')
+        self.combo_conta.set('')
+        self.entry_valor.delete(0, tk.END)
+        self.entry_observacoes.delete(0, tk.END)
 
     def _exportar_csv(self):
         self.db_manager.exportar_csv()
