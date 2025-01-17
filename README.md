@@ -38,6 +38,8 @@ Este é um aplicativo de gestão financeira desenvolvido em Python utilizando a 
 
 ### Tela Principal
 ![Tela Principal](screenshots/tela_principal.png)
+![screenshotstela_principal](https://github.com/user-attachments/assets/305eb26f-7c9d-45d5-970d-3041f8323da3)
+![screenshotstela_filtros](https://github.com/user-attachments/assets/2467715e-5648-4959-a94a-d1716ea17b8c)
 
 ### Tela de Filtros
 ![Tela de Filtros](screenshots/tela_filtros.png)
